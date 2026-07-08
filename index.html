@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Double Pot — 3-Card Poker × Baccarat</title>
+<style>
+  :root{
+    --felt:#0e5c3a; --felt-dark:#0a4229; --gold:#e8c469; --cream:#f5efe0;
+    --red:#c0392b; --ink:#1b1b1f; --win:#ffd75e;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    font-family:'Segoe UI', system-ui, sans-serif;
+    background:radial-gradient(ellipse at 50% 30%, var(--felt) 0%, var(--felt-dark) 75%, #062b1a 100%);
+    min-height:100vh; color:var(--cream);
+    display:flex; flex-direction:column; align-items:center;
+  }
+  h1{
+    font-size:clamp(1.2rem,3vw,1.8rem); letter-spacing:.18em; color:var(--gold);
+    text-transform:uppercase; margin:14px 0 2px; text-shadow:0 2px 8px rgba(0,0,0,.5);
+  }
+  .subtitle{font-size:.8rem; opacity:.75; letter-spacing:.08em; margin-bottom:10px;}
+
+  /* ---------- setup screen ---------- */
+  #setup{
+    background:rgba(0,0,0,.35); border:1px solid rgba(232,196,105,.4); border-radius:16px;
+    padding:28px 36px; margin-top:8vh; text-align:center; max-width:420px;
+  }
+  #setup h2{color:var(--gold); margin-bottom:16px; font-weight:600; letter-spacing:.05em;}
+  .rules-note{font-size:.78rem; line-height:1.5; opacity:.8; text-align:left; margin-bottom:18px;}
+  .rules-note b{color:var(--gold);}
+
+  /* ---------- setup: name / online panels ---------- */
+  #setup input{
+    width:100%; padding:10px 12px; border-radius:8px; border:1px solid rgba(232,196,105,.4);
+    background:rgba(0,0,0,.3); color:var(--cream); font-size:.95rem; outline:none;
+  }
+  #setup input:focus{border-color:var(--gold);}
+  .namerow{margin-bottom:14px; text-align:left;}
+  .namerow label{font-size:.75rem; opacity:.8; display:block; margin-bottom:4px; letter-spacing:.05em;}
+  #modeBtns{display:flex; flex-direction:column; gap:10px; margin-bottom:14px;}
+  #modeBtns .primary{width:100%;}
+  .panel{margin:6px 0 16px;}
+  .panel .primary{margin-top:10px;}
+  .linkrow{display:flex; gap:8px; margin-bottom:10px;}
+  .linkrow input{font-size:.8rem;}
+  .linkrow button{
+    background:transparent; border:1px solid var(--gold); color:var(--gold); border-radius:8px;
+    padding:0 14px; cursor:pointer; font-weight:600; white-space:nowrap;
+  }
+  .lobby-item{
+    background:rgba(255,255,255,.06); border-radius:8px; padding:7px 12px; margin:5px 0;
+    font-size:.9rem; text-align:left;
+  }
+  .mutter{font-size:.78rem; opacity:.75; margin:8px 0;}
+  .rstat{position:absolute; top:7px; right:9px; font-size:.85rem;}
+
+  button.primary{
+    background:linear-gradient(180deg,#f3d488,var(--gold)); color:var(--ink);
+    border:none; border-radius:10px; padding:12px 34px; font-size:1rem; font-weight:700;
+    letter-spacing:.06em; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.4); transition:.15s;
+  }
+  button.primary:hover{transform:translateY(-1px); box-shadow:0 6px 18px rgba(0,0,0,.5);}
+  button.primary:disabled{opacity:.4; cursor:default; transform:none;}
+
+  /* ---------- table ---------- */
+  #table{display:none; width:100%; max-width:1100px; padding:0 16px 30px; flex:1;}
+  #opponents{display:flex; justify-content:center; gap:14px; flex-wrap:wrap; margin-bottom:6px;}
+
+  .seat{
+    background:rgba(0,0,0,.30); border:1px solid rgba(255,255,255,.10); border-radius:14px;
+    padding:10px 14px 12px; min-width:150px; text-align:center; position:relative; transition:.3s;
+  }
+  .seat.me{border-color:rgba(232,196,105,.55); background:rgba(0,0,0,.38);}
+  .seat.busted{opacity:.35; filter:grayscale(1);}
+  .seat .pname{font-size:.85rem; font-weight:600; letter-spacing:.04em;}
+  .seat .chips{font-size:.75rem; color:var(--gold); margin-top:2px;}
+  .seat .delta{font-size:.75rem; margin-top:2px; height:1em; font-weight:700;}
+  .delta.pos{color:#7CFC9B;} .delta.neg{color:#ff8f8f;}
+
+  .cards{display:flex; gap:6px; justify-content:center; margin:10px 0 6px; min-height:96px;}
+  .card{
+    width:64px; height:92px; border-radius:8px; background:var(--cream); color:var(--ink);
+    display:flex; flex-direction:column; justify-content:center; align-items:center;
+    font-weight:700; box-shadow:0 3px 8px rgba(0,0,0,.45); position:relative;
+    font-size:16px;
+  }
+  /* real pip layout — lets you read the sides during a squeeze */
+  .pip{position:absolute; transform:translate(-50%,-50%); font-size:1.15em; line-height:1;}
+  .wm{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size:2.6em; font-weight:800; opacity:.16; pointer-events:none;
+  }
+  .pip.inv{transform:translate(-50%,-50%) rotate(180deg);}
+  .idx{position:absolute; top:3px; left:4px; font-size:.62em; font-weight:700; line-height:1.1; text-align:center;}
+  .idx.b{top:auto; left:auto; bottom:3px; right:4px; transform:rotate(180deg);}
+  .bigface{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1;}
+  .bigface .lg{font-size:2em; font-weight:700;}
+  .bigface .sm{font-size:1em;}
+  .frame{position:absolute; inset:14% 20%; border:1px solid currentColor; border-radius:4px; opacity:.45;}
+  .card.red{color:var(--red);}
+  .card.back{
+    background:repeating-linear-gradient(45deg,#7a2030 0 6px,#5e1622 6px 12px);
+    border:3px solid var(--cream);
+  }
+  .card.dealt{animation:dealIn .35s ease-out;}
+  @keyframes dealIn{from{transform:translateY(-26px) scale(.7); opacity:0;} to{transform:none; opacity:1;}}
+
+  /* ---------- squeezable cards (slide-peel — pure 2D) ---------- */
+  .sq{
+    width:104px; height:150px; touch-action:none; cursor:grab;
+    animation:dealIn .35s ease-out; user-select:none;
+  }
+  .sq:active{cursor:grabbing;}
+  .sq .sqInner{position:relative; width:100%; height:100%; overflow:hidden; border-radius:10px;}
+  .sq .cface, .sq .cback{position:absolute; inset:0;}
+  .sq .cface .card{width:100%; height:100%; box-shadow:none;}
+  .sq .cback{z-index:2; box-shadow:0 0 10px rgba(0,0,0,.5);}
+  .sq:not(.open) .cback::after{
+    content:'🤏'; position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; font-size:1.6rem; opacity:.65;
+  }
+
+  .handinfo{font-size:.72rem; min-height:2.4em; line-height:1.25;}
+  .handinfo .pk{color:#bfe6ff;} .handinfo .bc{color:#ffd7a8;}
+
+  .badge{
+    position:absolute; top:-11px; padding:2px 9px; border-radius:20px; font-size:.66rem; font-weight:700;
+    letter-spacing:.04em; color:var(--ink); box-shadow:0 2px 6px rgba(0,0,0,.4); animation:pop .3s ease-out;
+  }
+  .badge.poker{left:8px; background:#8fd0ff;}
+  .badge.bacc{right:8px; background:#ffc178;}
+  @keyframes pop{from{transform:scale(.3); opacity:0;} to{transform:scale(1); opacity:1;}}
+  .seat.winglow{box-shadow:0 0 0 2px var(--win), 0 0 24px rgba(255,215,94,.35);}
+
+  /* ---------- center ---------- */
+  #center{display:flex; flex-direction:column; align-items:center; margin:14px 0;}
+  #pot{
+    display:flex; gap:26px; background:rgba(0,0,0,.3); border:1px dashed rgba(232,196,105,.45);
+    border-radius:40px; padding:10px 30px; margin-bottom:14px;
+  }
+  .potHalf{text-align:center;}
+  .potHalf .lbl{font-size:.66rem; letter-spacing:.12em; text-transform:uppercase; opacity:.75;}
+  .potHalf .amt{font-size:1.3rem; font-weight:700; color:var(--gold);}
+  #controls{display:flex; gap:12px; align-items:center;}
+  #roundMsg{margin-top:10px; font-size:.9rem; min-height:1.3em; text-align:center; color:var(--win); font-weight:600;}
+
+  #me{display:flex; justify-content:center; margin-top:6px;}
+  #me .seat{min-width:400px;}
+  #me .cards{min-height:156px;}
+  #me .card{width:104px; height:150px; font-size:26px; border-radius:10px;}
+
+  /* ---------- log ---------- */
+  #log{
+    width:100%; max-width:640px; margin:16px auto 0; background:rgba(0,0,0,.28);
+    border-radius:10px; padding:10px 14px; font-size:.74rem; line-height:1.6;
+    max-height:130px; overflow-y:auto; border:1px solid rgba(255,255,255,.08);
+  }
+  #log .rnd{color:var(--gold); font-weight:700;}
+  #gameover{
+    display:none; text-align:center; margin-top:14px; font-size:1.05rem; color:var(--win); font-weight:700;
+  }
+</style>
+</head>
+<body>
+
+<h1>Double Pot</h1>
+<div class="subtitle">3-Card Poker × Baccarat &nbsp;•&nbsp; two pots, no splits</div>
+
+<!-- ============ SETUP ============ -->
+<div id="setup">
+  <h2>Set the table</h2>
+  <div class="namerow"><label>Your name</label><input id="nameInput" maxlength="14" placeholder="Player"></div>
+  <div id="modeBtns">
+    <button class="primary" id="hostBtn">🌐 Host Online Game</button>
+  </div>
+  <div class="panel" id="hostPanel" style="display:none">
+    <div class="linkrow"><input id="roomLink" readonly placeholder="creating room…"><button id="copyBtn">Copy</button></div>
+    <div id="lobbyList"></div>
+    <div class="mutter" id="hostStatus"></div>
+    <button class="primary" id="startOnlineBtn" disabled>Start Game</button>
+  </div>
+  <div class="panel" id="joinPanel" style="display:none">
+    <input id="roomInput" placeholder="paste the link or room code">
+    <button class="primary" id="connectBtn">Join</button>
+    <div class="mutter" id="joinStatus"></div>
+    <div id="lobbyListGuest"></div>
+  </div>
+  <div class="rules-note">
+    <b>Ante:</b> everyone posts 1 chip. The pot is cut in two.<br>
+    <b>Poker half:</b> best 3-card hand — high card &lt; pair &lt; flush &lt; straight &lt; trips &lt; straight flush &lt; royal.<br>
+    <b>Baccarat half:</b> sum of the 3 cards, closest to 9 (A=1, 10/J/Q/K=0, mod 10).<br>
+    <b>No chops:</b> exact ties go to the higher cards (rank, then ♠&gt;♥&gt;♦&gt;♣).
+  </div>
+</div>
+
+<!-- ============ TABLE ============ -->
+<div id="table">
+  <div id="opponents"></div>
+
+  <div id="center">
+    <div id="pot">
+      <div class="potHalf"><div class="lbl">♠ Poker Pot</div><div class="amt" id="potPoker">0</div></div>
+      <div class="potHalf"><div class="lbl">9 Baccarat Pot</div><div class="amt" id="potBacc">0</div></div>
+    </div>
+    <div id="controls">
+      <button class="primary" id="nextBtn" style="display:none">Next Round</button>
+    </div>
+    <div id="roundMsg"></div>
+    <div id="gameover"></div>
+  </div>
+
+  <div id="me"></div>
+  <div id="log"></div>
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+/* =====================================================
+   GAME LOGIC  (pure functions — shared by every mode)
+   ===================================================== */
+const SUIT_CHARS = ['♣','♦','♥','♠'];          // index = suit strength 0..3 (♠ strongest)
+const RANK_CHARS = {11:'J',12:'Q',13:'K',14:'A'};
+const CAT_NAMES  = ['High Card','Pair','Flush','Straight','Trips','Straight Flush','Royal Flush'];
+
+function newDeck(){
+  const d=[];
+  for(let s=0;s<4;s++) for(let r=2;r<=14;r++) d.push({rank:r,suit:s});
+  for(let i=d.length-1;i>0;i--){                 // Fisher–Yates
+    const j=Math.floor(Math.random()*(i+1));
+    [d[i],d[j]]=[d[j],d[i]];
+  }
+  return d;
+}
+const rankChar = r => RANK_CHARS[r] || String(r);
+const cardStr  = c => rankChar(c.rank)+SUIT_CHARS[c.suit];
+
+/* ---- poker evaluation ---- */
+function evalPoker(cards){
+  const rs = cards.map(c=>c.rank).sort((a,b)=>b-a);       // desc
+  const flush = cards.every(c=>c.suit===cards[0].suit);
+  let straight=false, top=0;
+  if(rs[0]-rs[1]===1 && rs[1]-rs[2]===1){ straight=true; top=rs[0]; }
+  else if(rs[0]===14 && rs[1]===3 && rs[2]===2){ straight=true; top=3; }  // A-2-3 plays low
+  const trips = rs[0]===rs[2];
+  const pair  = !trips && (rs[0]===rs[1] || rs[1]===rs[2]);
+
+  let cat, tie, label;
+  if(straight && flush){
+    cat = (top===14) ? 6 : 5;
+    tie = [top];
+    label = cat===6 ? 'Royal Flush' : `Straight Flush, ${rankChar(top)} high`;
+  } else if(trips){
+    cat=4; tie=[rs[0]]; label=`Trips, ${rankChar(rs[0])}s`;
+  } else if(straight){
+    cat=3; tie=[top]; label=`Straight, ${rankChar(top)} high`;
+  } else if(flush){
+    cat=2; tie=rs; label=`Flush, ${rankChar(rs[0])} high`;
+  } else if(pair){
+    const p = rs[0]===rs[1] ? rs[0] : rs[1];
+    const k = rs[0]===rs[1] ? rs[2] : rs[0];
+    cat=1; tie=[p,k]; label=`Pair of ${rankChar(p)}s`;
+  } else {
+    cat=0; tie=rs; label=`${rankChar(rs[0])} high`;
+  }
+  return {cat, tie, label};
+}
+
+/* suit fallback: cards ordered by rank desc then suit desc, compare suit sequence */
+function suitSeq(cards){
+  return [...cards].sort((a,b)=> b.rank-a.rank || b.suit-a.suit).map(c=>c.suit);
+}
+function comparePoker(a,b){           // a,b = {cards, eval}; >0 means a wins
+  if(a.eval.cat !== b.eval.cat) return a.eval.cat - b.eval.cat;
+  for(let i=0;i<a.eval.tie.length;i++)
+    if(a.eval.tie[i]!==b.eval.tie[i]) return a.eval.tie[i]-b.eval.tie[i];
+  const sa=suitSeq(a.cards), sb=suitSeq(b.cards);
+  for(let i=0;i<3;i++) if(sa[i]!==sb[i]) return sa[i]-sb[i];
+  return 0;
+}
+
+/* ---- baccarat evaluation ---- */
+function baccTotal(cards){
+  return cards.reduce((t,c)=> t + (c.rank>=10 ? (c.rank===14?1:0) : c.rank), 0) % 10;
+}
+/* tie → higher cards: compare ranks desc (ace high), then suits */
+function compareBacc(a,b){            // a,b = {cards, total}; >0 means a wins
+  if(a.total!==b.total) return a.total-b.total;
+  const ra=a.cards.map(c=>c.rank).sort((x,y)=>y-x);
+  const rb=b.cards.map(c=>c.rank).sort((x,y)=>y-x);
+  for(let i=0;i<3;i++) if(ra[i]!==rb[i]) return ra[i]-rb[i];
+  const sa=suitSeq(a.cards), sb=suitSeq(b.cards);
+  for(let i=0;i<3;i++) if(sa[i]!==sb[i]) return sa[i]-sb[i];
+  return 0;
+}
+
+/* =====================================================
+   TABLE STATE + UI
+   ===================================================== */
+const START_CHIPS = 20;
+let players=[], round=0, phase='idle';
+/* online state */
+let mode='solo', peer=null, conns={}, hostConn=null, myId='host', myName='', readySet=new Set(), roomCode='';
+
+const $ = id => document.getElementById(id);
+
+/* name + mode selection */
+const nameInput = $('nameInput');
+nameInput.value = localStorage.getItem('dpname') || '';
+function grabName(){
+  myName = (nameInput.value.trim() || 'Player').slice(0,14);
+  localStorage.setItem('dpname', myName);
+  return myName;
+}
+function showPanel(id){
+  ['hostPanel','joinPanel'].forEach(p=>{ $(p).style.display = p===id ? 'block' : 'none'; });
+}
+$('hostBtn').onclick = ()=> { grabName(); startHosting(); };
+
+/* arriving via a shared link? jump straight to the join panel */
+const urlRoom = new URLSearchParams(location.search).get('room');
+if(urlRoom){ showPanel('joinPanel'); $('roomInput').value = urlRoom.toUpperCase(); }
+
+/* ----- rendering ----- */
+function seatHTML(p){
+  return `<div class="seat${p.me?' me':''}${p.out||p.gone?' busted':''}" id="seat-${p.id}">
+    <div class="rstat" id="rstat-${p.id}"></div>
+    <div class="pname">${p.name}</div>
+    <div class="chips">🪙 ${fmt(p.chips)}</div>
+    <div class="delta" id="delta-${p.id}"></div>
+    <div class="cards" id="cards-${p.id}"></div>
+    <div class="handinfo" id="info-${p.id}"></div>
+  </div>`;
+}
+function renderSeats(){
+  $('opponents').innerHTML = players.filter(p=>!p.me).map(seatHTML).join('');
+  $('me').innerHTML        = players.filter(p=> p.me).map(seatHTML).join('');
+}
+/* standard pip positions [x%, y%] — side columns are what you read in a squeeze:
+   A/2/3 none, 4/5 two per side, 6/7/8 three per side, 9/10 four per side */
+const PIPS = {
+  2:[[50,22],[50,78]],
+  3:[[50,22],[50,50],[50,78]],
+  4:[[32,22],[68,22],[32,78],[68,78]],
+  5:[[32,22],[68,22],[50,50],[32,78],[68,78]],
+  6:[[32,22],[68,22],[32,50],[68,50],[32,78],[68,78]],
+  7:[[32,22],[68,22],[50,36],[32,50],[68,50],[32,78],[68,78]],
+  8:[[32,22],[68,22],[50,36],[32,50],[68,50],[50,64],[32,78],[68,78]],
+  9:[[32,22],[68,22],[32,41],[68,41],[50,50],[32,59],[68,59],[32,78],[68,78]],
+  10:[[32,22],[68,22],[50,32],[32,41],[68,41],[32,59],[68,59],[50,68],[32,78],[68,78]]
+};
+function faceHTML(c, dealt, noIdx){
+  const red=(c.suit===1||c.suit===2), s=SUIT_CHARS[c.suit], r=c.rank;
+  let mid='';
+  if(r===14) mid=`<div class="bigface"><span class="lg">${s}</span></div>`;
+  else if(r>=11) mid=`<div class="frame"></div><div class="bigface"><span class="lg">${rankChar(r)}</span><span class="sm">${s}</span></div>`;
+  else {
+    mid+=`<div class="wm">${r}</div>`;   // faint rank in the middle — last thing a peel reveals
+    PIPS[r].forEach(([x,y])=>{ mid+=`<div class="pip${y>50?' inv':''}" style="left:${x}%;top:${y}%">${s}</div>`; });
+  }
+  const idx = noIdx ? '' : `<div class="idx">${rankChar(r)}<br>${s}</div>`;
+  const idxB = noIdx ? '' : `<div class="idx b">${rankChar(r)}<br>${s}</div>`;
+  return `<div class="card${red?' red':''}${dealt?' dealt':''}">${idx}${mid}${idxB}</div>`;
+}
+function cardHTML(c, hidden){
+  if(hidden) return `<div class="card back dealt"></div>`;
+  return faceHTML(c, true);
+}
+
+/* ----- squeezable cards (your hand) ----- */
+let squeezedCount = 0;
+function sqCardHTML(c){
+  return `<div class="sq"><div class="sqInner">
+    <div class="cface">${faceHTML(c,false,true)}</div>
+    <div class="cback card back"></div>
+  </div></div>`;
+}
+function makeSqueezable(el){
+  /* slide-peel: the back slides in the drag direction, exposing the face
+     from that edge — drag sideways to read the side pips first. */
+  const back = el.querySelector('.cback');
+  let sx=null, sy=null, tx=0, ty=0, raf=null;
+  const paint = ()=>{ back.style.transform = `translate(${tx}px,${ty}px)`; };
+  const animTo = (gx,gy,done)=>{
+    cancelAnimationFrame(raf);
+    const fx=tx, fy=ty, t0=performance.now();
+    const step = now=>{
+      const t=Math.min(1,(now-t0)/280), e=1-Math.pow(1-t,3);   // ease-out
+      tx=fx+(gx-fx)*e; ty=fy+(gy-fy)*e; paint();
+      if(t<1) raf=requestAnimationFrame(step); else if(done) done();
+    };
+    raf=requestAnimationFrame(step);
+  };
+  el.addEventListener('pointerdown', e=>{
+    if(el.classList.contains('open')) return;
+    try{ el.setPointerCapture(e.pointerId); }catch(_){}
+    cancelAnimationFrame(raf);
+    sx=e.clientX; sy=e.clientY;
+  });
+  el.addEventListener('pointermove', e=>{
+    if(sx===null || el.classList.contains('open')) return;
+    const W=el.clientWidth, H=el.clientHeight;
+    tx=Math.max(-W,Math.min(W,e.clientX-sx));   // free peel — follows the drag
+    ty=Math.max(-H,Math.min(H,e.clientY-sy));   // in any direction, corners included
+    paint();
+  });
+  const end = ()=>{
+    if(sx===null) return;
+    sx=sy=null;
+    const W=el.clientWidth, H=el.clientHeight;
+    const fr = Math.max(Math.abs(tx)/W, Math.abs(ty)/H);
+    if(fr>0.5){                                            // committed — peel it all the way off
+      el.classList.add('open');
+      animTo(Math.sign(tx)*W, Math.sign(ty)*H, ()=>{ back.style.display='none'; });
+      onSqueezed();
+    } else animTo(0,0);                                    // chickened out — slides back over
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+  el.addEventListener('dblclick', ()=>{ el._openNow(); });   // double-click flips it instantly
+  el._openNow = ()=>{
+    if(!el.classList.contains('open')){
+      el.classList.add('open');
+      const W=el.clientWidth, H=el.clientHeight;
+      const gx = tx ? Math.sign(tx)*W : 0;
+      const gy = ty ? Math.sign(ty)*H : (gx ? 0 : H);   // default: slide off downward
+      animTo(gx, gy, ()=>{ back.style.display='none'; });
+      onSqueezed();
+    }
+  };
+}
+function onSqueezed(){
+  squeezedCount++;
+  if(squeezedCount>=3){
+    showMyInfo();
+    if(mode==='guest' && hostConn) hostConn.send({t:'ready'});
+    else if(mode==='host') hostMarkReady('host');
+  }
+}
+function showMyInfo(){
+  const me = players.find(p=>p.me);
+  $('info-'+me.id).innerHTML =
+    `<span class="pk">${me.eval.label}</span> · <span class="bc">Baccarat ${me.total}</span>`;
+}
+function openMyCards(){
+  document.querySelectorAll('#me .sq').forEach(el=>{ if(el._openNow) el._openNow(); });
+}
+function fmt(n){ return Number.isInteger(n) ? n : n.toFixed(1); }
+function log(html){
+  const el=$('log');
+  el.innerHTML += `<div>${html}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+/* =====================================================
+   ONLINE PLAY  (P2P — the host's browser is the dealer)
+   ===================================================== */
+function peerAvailable(){ return typeof Peer !== 'undefined'; }
+function randCode(){
+  const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s='';
+  for(let i=0;i<6;i++) s+=A[Math.floor(Math.random()*A.length)];
+  return s;
+}
+function activeOnline(){ return players.filter(p=>!p.out && !p.gone); }
+function pubPlayers(){ return players.map(p=>({id:p.id, name:p.name, chips:p.chips, out:!!p.out})); }
+function broadcast(msg){ Object.values(conns).forEach(c=>{ try{ c.send(msg); }catch(_){} }); }
+
+/* ---------- host ---------- */
+function startHosting(){
+  if(!peerAvailable()){ showPanel('hostPanel'); $('hostStatus').textContent='⚠ Could not load the networking library — check your internet, then refresh.'; return; }
+  showPanel('hostPanel');
+  mode='host'; myId='host';
+  roomCode = randCode();
+  players=[{id:'host', name:myName, chips:START_CHIPS, me:true}];
+  $('hostStatus').textContent='Setting up the room…';
+  peer = new Peer('dblpot-'+roomCode);
+  peer.on('open', ()=>{
+    $('roomLink').value = location.origin + location.pathname + '?room=' + roomCode;
+    renderLobby();
+  });
+  peer.on('connection', c=>{
+    c.on('data', d=>hostOnMsg(c,d));
+    c.on('close', ()=>hostDropGuest(c.peer));
+  });
+  peer.on('error', e=>{ $('hostStatus').textContent='⚠ Connection error: '+e.type; });
+}
+$('copyBtn').onclick = ()=>{
+  navigator.clipboard.writeText($('roomLink').value);
+  $('copyBtn').textContent='Copied!';
+  setTimeout(()=>{ $('copyBtn').textContent='Copy'; }, 1200);
+};
+function hostOnMsg(c,d){
+  if(d.t==='hello'){
+    if($('table').style.display==='block'){ c.send({t:'err', msg:'That game already started.'}); return; }
+    if(players.length>=6){ c.send({t:'err', msg:'The table is full (6 max).'}); return; }
+    let nm=(d.name||'Player').slice(0,14), base=nm, n=2;
+    while(players.some(p=>p.name===nm)) nm = base+' '+(n++);
+    players.push({id:c.peer, name:nm, chips:START_CHIPS, me:false});
+    conns[c.peer]=c;
+    broadcast({t:'lobby', players:pubPlayers()});
+    renderLobby();
+  }
+  else if(d.t==='ready'){ hostMarkReady(c.peer); }
+}
+function renderLobby(){
+  $('lobbyList').innerHTML = players.map(p=>`<div class="lobby-item">${p.name}${p.id==='host'?' 👑':''}</div>`).join('');
+  $('startOnlineBtn').disabled = players.length<2;
+  $('hostStatus').textContent = players.length<2
+    ? 'Waiting for players — share the link!'
+    : players.length+' players seated — start when ready.';
+}
+function hostDropGuest(id){
+  const p = players.find(q=>q.id===id);
+  delete conns[id];
+  if(!p) return;
+  if($('table').style.display!=='block'){          // left during lobby
+    players = players.filter(q=>q.id!==id);
+    broadcast({t:'lobby', players:pubPlayers()});
+    renderLobby();
+    return;
+  }
+  p.gone=true;
+  log(`${p.name} disconnected.`);
+  hostMarkReady(id);                               // don't hold the round hostage
+}
+$('startOnlineBtn').onclick = ()=>{
+  if(phase!=='idle') return;                       // guard double-clicks
+  $('startOnlineBtn').disabled=true;
+  $('setup').style.display='none'; $('table').style.display='block';
+  $('nextBtn').onclick = hostNextRound;
+  round=0;
+  log(`Table opened — ${players.length} players, ${START_CHIPS} chips each. Ante is 1.`);
+  hostDeal();
+};
+function hostDeal(){
+  round++;
+  readySet = new Set();
+  const act = activeOnline();
+  const deck = newDeck();
+  act.forEach(p=>{ p.chips-=1; p.cards=[deck.pop(),deck.pop(),deck.pop()]; });
+  const half = act.length/2;
+  players.forEach(p=>{
+    if(p.me || p.gone) return;
+    const c=conns[p.id]; if(!c) return;
+    try{ c.send({t:'deal', round, half, players:pubPlayers(), cards:p.out?null:p.cards}); }catch(_){}
+  });
+  const me = players.find(p=>p.me);
+  if(!me.out){ me.eval=evalPoker(me.cards); me.total=baccTotal(me.cards); }
+  renderDealLocal(half);
+}
+function hostMarkReady(id){
+  if(phase!=='dealt') return;                      // ignore late or duplicate readies
+  readySet.add(id);
+  broadcast({t:'status', ready:[...readySet]});
+  paintReady([...readySet]);
+  if(activeOnline().every(p=>readySet.has(p.id))) hostReveal();
+}
+function hostReveal(){
+  if(phase!=='dealt') return;                      // a round can only reveal once
+  phase='revealing';
+  const act = activeOnline();
+  const half = act.length/2;
+  act.forEach(p=>{ p.eval=evalPoker(p.cards); p.total=baccTotal(p.cards); });
+  let pw=act[0], bw=act[0];
+  act.forEach(p=>{
+    if(comparePoker({cards:p.cards,eval:p.eval},{cards:pw.cards,eval:pw.eval})>0) pw=p;
+    if(compareBacc({cards:p.cards,total:p.total},{cards:bw.cards,total:bw.total})>0) bw=p;
+  });
+  pw.chips+=half; bw.chips+=half;
+  const payload = {
+    t:'reveal', half, round, pokerWin:pw.id, baccWin:bw.id,
+    hands:Object.fromEntries(act.map(p=>[p.id, p.cards])),
+    chips:Object.fromEntries(players.map(p=>[p.id, p.chips]))
+  };
+  broadcast(payload);
+  renderOnlineReveal(payload);
+  $('nextBtn').style.display='inline-block';
+  phase='revealed';
+}
+function hostNextRound(){
+  if(phase!=='revealed') return;                   // guard double-clicks
+  players = players.filter(p=>!p.gone);
+  players.forEach(p=>{
+    delete p.cards;
+    if(!p.out && p.chips<1){ p.out=true; log(`${p.name} is out of chips.`); }
+  });
+  const act = players.filter(p=>!p.out);
+  if(act.length<2){
+    const w = act[0];
+    const msg = w ? `🏆 ${w.name} cleaned out the table with ${fmt(w.chips)} chips!` : 'Game over.';
+    broadcast({t:'gameover', msg});
+    showGameOver(msg);
+    return;
+  }
+  hostDeal();
+}
+
+/* ---------- guest ---------- */
+$('connectBtn').onclick = ()=>{
+  grabName();
+  let v = $('roomInput').value.trim();
+  const m = v.match(/room=([A-Za-z0-9]+)/);
+  if(m) v = m[1];
+  v = v.toUpperCase();
+  if(!v){ $('joinStatus').textContent='Enter a room code or paste the link.'; return; }
+  joinGame(v);
+};
+function joinGame(code){
+  if(!peerAvailable()){ $('joinStatus').textContent='⚠ Could not load the networking library — check your internet, then refresh.'; return; }
+  mode='guest';
+  $('joinStatus').textContent='Connecting…';
+  $('connectBtn').disabled=true;
+  peer = new Peer();
+  peer.on('open', ()=>{
+    myId = peer.id;
+    hostConn = peer.connect('dblpot-'+code, {reliable:true});
+    hostConn.on('open', ()=>{
+      hostConn.send({t:'hello', name:myName});
+      $('joinStatus').textContent='Connected — waiting for the host to start…';
+    });
+    hostConn.on('data', guestOnMsg);
+    hostConn.on('close', ()=>{
+      $('joinStatus').textContent='⚠ Host disconnected.';
+      $('roundMsg').textContent='⚠ Host disconnected — game over.';
+      $('connectBtn').disabled=false;
+    });
+  });
+  peer.on('error', e=>{
+    $('joinStatus').textContent = e.type==='peer-unavailable'
+      ? 'Room not found — double-check the code.' : '⚠ Connection error: '+e.type;
+    $('connectBtn').disabled=false;
+  });
+}
+function guestOnMsg(d){
+  if(d.t==='err'){ $('joinStatus').textContent='⚠ '+d.msg; $('connectBtn').disabled=false; return; }
+  if(d.t==='lobby'){
+    $('lobbyListGuest').innerHTML = d.players.map(p=>`<div class="lobby-item">${p.name}${p.id==='host'?' 👑':''}</div>`).join('');
+    return;
+  }
+  if(d.t==='deal'){
+    players = d.players.map(p=>({...p, me:p.id===myId}));
+    round = d.round;
+    const me = players.find(p=>p.me);
+    if(d.cards){ me.cards=d.cards; me.eval=evalPoker(d.cards); me.total=baccTotal(d.cards); }
+    if($('setup').style.display!=='none'){
+      $('setup').style.display='none'; $('table').style.display='block';
+      $('nextBtn').style.display='none';
+    }
+    renderDealLocal(d.half);
+    return;
+  }
+  if(d.t==='status'){ paintReady(d.ready); return; }
+  if(d.t==='reveal'){ renderOnlineReveal(d); return; }
+  if(d.t==='gameover'){ showGameOver(d.msg); }
+}
+
+/* ---------- shared online rendering ---------- */
+function renderDealLocal(half){
+  renderSeats();
+  squeezedCount = 0;
+  players.forEach(p=>{
+    if(p.gone || p.out) return;
+    if(p.me && p.cards){
+      $('cards-'+p.id).innerHTML = p.cards.map(sqCardHTML).join('');
+      $('info-'+p.id).innerHTML = '🤏 drag any direction to peel · double-click to flip';
+      document.querySelectorAll('#me .sq').forEach(makeSqueezable);
+    } else if(!p.me){
+      $('cards-'+p.id).innerHTML = '<div class="card back dealt"></div>'.repeat(3);
+    }
+    $('rstat-'+p.id).textContent='🤏';
+  });
+  $('potPoker').textContent=fmt(half);
+  $('potBacc').textContent=fmt(half);
+  $('nextBtn').style.display='none';
+  const me = players.find(p=>p.me);
+  $('roundMsg').textContent = me.out
+    ? `Round ${round} — you're busted, spectating.`
+    : `Round ${round} — squeeze your cards. The table reveals when everyone's ready.`;
+  phase='dealt';
+}
+function paintReady(ids){
+  players.forEach(p=>{
+    const el=$('rstat-'+p.id);
+    if(el && !p.out && !p.gone) el.textContent = ids.includes(p.id) ? '✅' : '🤏';
+  });
+}
+function renderOnlineReveal(pl){
+  players.forEach(p=>{
+    const el=$('rstat-'+p.id); if(el) el.textContent='';
+    if(pl.chips[p.id]!==undefined) p.chips=pl.chips[p.id];
+    const cards = pl.hands[p.id];
+    if(!cards) return;
+    p.cards=cards;
+    const ev=evalPoker(cards), total=baccTotal(cards);
+    if(!p.me) $('cards-'+p.id).innerHTML = cards.map(c=>cardHTML(c,false)).join('');
+    $('info-'+p.id).innerHTML = `<span class="pk">${ev.label}</span> · <span class="bc">Baccarat ${total}</span>`;
+    const won=(p.id===pl.pokerWin?pl.half:0)+(p.id===pl.baccWin?pl.half:0), net=won-1;
+    const d=$('delta-'+p.id);
+    d.textContent = net>0?`+${fmt(net)}`:fmt(net);
+    d.className = 'delta '+(net>0?'pos':'neg');
+    const seat=$('seat-'+p.id);
+    if(p.id===pl.pokerWin){ seat.insertAdjacentHTML('beforeend','<div class="badge poker">♠ POKER</div>'); seat.classList.add('winglow'); }
+    if(p.id===pl.baccWin){ seat.insertAdjacentHTML('beforeend','<div class="badge bacc">9 BACC</div>'); seat.classList.add('winglow'); }
+    seat.querySelector('.chips').innerHTML='🪙 '+fmt(p.chips);
+  });
+  openMyCards();
+  const pw=players.find(p=>p.id===pl.pokerWin), bw=players.find(p=>p.id===pl.baccWin);
+  $('roundMsg').textContent = pw===bw
+    ? `${pw.name} scoops BOTH pots!`
+    : `${pw.name} takes poker — ${bw.name} takes baccarat.`;
+  log(`<span class="rnd">R${pl.round}</span> ` +
+    players.filter(p=>pl.hands[p.id]).map(p=>`${p.name}: ${pl.hands[p.id].map(cardStr).join(' ')}`).join(' | ') +
+    ` → ♠ ${pw.name}, 9 ${bw.name}`);
+  phase='revealed';
+}
+function showGameOver(msg){
+  phase='over';
+  renderSeats();
+  $('nextBtn').style.display='none';
+  $('gameover').style.display='block';
+  $('gameover').textContent = msg + ' Refresh to play again.';
+}
+</script>
+</body>
+</html>
