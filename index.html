@@ -215,7 +215,8 @@
   <div id="log"></div>
 </div>
 
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"
+  onerror="this.remove();var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';document.head.appendChild(s);"></script>
 <script>
 /* =====================================================
    GAME LOGIC  (pure functions — shared by every mode)
@@ -469,13 +470,19 @@ function broadcast(msg){ Object.values(conns).forEach(c=>{ try{ c.send(msg); }ca
 /* ---------- host ---------- */
 function startHosting(){
   if(!peerAvailable()){ showPanel('hostPanel'); $('hostStatus').textContent='⚠ Could not load the networking library — check your internet, then refresh.'; return; }
+  if(peer) return;                                 // already connecting/connected
   showPanel('hostPanel');
   mode='host'; myId='host';
   roomCode = randCode();
   players=[{id:'host', name:myName, chips:START_CHIPS, me:true}];
   $('hostStatus').textContent='Setting up the room…';
   peer = new Peer('dblpot-'+roomCode);
+  const bootTimer = setTimeout(()=>{
+    if(!$('roomLink').value)
+      $('hostStatus').textContent='⚠ Can\'t reach the connection service (peerjs.com). An ad-blocker, VPN, or firewall may be blocking it — try disabling those for this site, then refresh.';
+  }, 8000);
   peer.on('open', ()=>{
+    clearTimeout(bootTimer);
     $('roomLink').value = location.origin + location.pathname + '?room=' + roomCode;
     renderLobby();
   });
@@ -612,7 +619,14 @@ function joinGame(code){
   $('joinStatus').textContent='Connecting…';
   $('connectBtn').disabled=true;
   peer = new Peer();
+  const bootTimer = setTimeout(()=>{
+    if($('joinStatus').textContent==='Connecting…'){
+      $('joinStatus').textContent='⚠ Can\'t reach the connection service (peerjs.com). An ad-blocker, VPN, or firewall may be blocking it — try disabling those for this site, then refresh.';
+      $('connectBtn').disabled=false;
+    }
+  }, 8000);
   peer.on('open', ()=>{
+    clearTimeout(bootTimer);
     myId = peer.id;
     hostConn = peer.connect('dblpot-'+code, {reliable:true});
     hostConn.on('open', ()=>{
