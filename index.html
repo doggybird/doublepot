@@ -89,9 +89,29 @@
   /* real pip layout — lets you read the sides during a squeeze */
   .pip{position:absolute; transform:translate(-50%,-50%); font-size:1.15em; line-height:1;}
   .wm{
-    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-    font-size:2.6em; font-weight:800; opacity:.16; pointer-events:none;
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    font-size:1.1em; font-weight:800; opacity:.5; pointer-events:none; line-height:1;
+    text-shadow:0 0 6px var(--cream), 0 0 3px var(--cream), 0 0 2px var(--cream);
   }
+
+  /* ---------- scoop celebration ---------- */
+  #scoopFx{position:fixed; inset:0; pointer-events:none; z-index:50; overflow:hidden;
+    display:flex; align-items:center; justify-content:center;}
+  .scoopTxt{
+    font-size:clamp(2.2rem,8vw,4.2rem); font-weight:900; color:var(--win); text-align:center;
+    text-shadow:0 4px 24px rgba(0,0,0,.65), 0 0 40px rgba(255,215,94,.45);
+    letter-spacing:.05em; animation:scoopPop 2.8s ease-out forwards;
+  }
+  @keyframes scoopPop{
+    0%{transform:scale(.2) rotate(-10deg); opacity:0;}
+    12%{transform:scale(1.18) rotate(3deg); opacity:1;}
+    22%{transform:scale(1) rotate(0deg);}
+    78%{opacity:1;}
+    100%{opacity:0; transform:scale(1.06);}
+  }
+  .chipfall{position:absolute; top:-50px; font-size:1.7rem; animation-name:chipFall;
+    animation-timing-function:linear; animation-fill-mode:forwards;}
+  @keyframes chipFall{to{transform:translateY(115vh) rotate(720deg);}}
   .pip.inv{transform:translate(-50%,-50%) rotate(180deg);}
   .idx{position:absolute; top:3px; left:4px; font-size:.62em; font-weight:700; line-height:1.1; text-align:center;}
   .idx.b{top:auto; left:auto; bottom:3px; right:4px; transform:rotate(180deg);}
@@ -205,6 +225,7 @@
       <div class="potHalf"><div class="lbl">9 Baccarat Pot</div><div class="amt" id="potBacc">0</div></div>
     </div>
     <div id="controls">
+      <button class="primary" id="flipAllBtn" style="display:none">🔓 Reveal My Cards</button>
       <button class="primary" id="nextBtn" style="display:none">Next Round</button>
     </div>
     <div id="roundMsg"></div>
@@ -357,8 +378,8 @@ function faceHTML(c, dealt, noIdx){
   if(r===14) mid=`<div class="bigface"><span class="lg">${s}</span></div>`;
   else if(r>=11) mid=`<div class="frame"></div><div class="bigface"><span class="lg">${rankChar(r)}</span><span class="sm">${s}</span></div>`;
   else {
-    mid+=`<div class="wm">${r}</div>`;   // faint rank in the middle — last thing a peel reveals
     PIPS[r].forEach(([x,y])=>{ mid+=`<div class="pip${y>50?' inv':''}" style="left:${x}%;top:${y}%">${s}</div>`; });
+    mid+=`<div class="wm">${r}</div>`;   // small ghost rank dead-center — last thing a peel reveals
   }
   const idx = noIdx ? '' : `<div class="idx">${rankChar(r)}<br>${s}</div>`;
   const idxB = noIdx ? '' : `<div class="idx b">${rankChar(r)}<br>${s}</div>`;
@@ -435,6 +456,7 @@ function onSqueezed(){
   squeezedCount++;
   if(squeezedCount>=3){
     showMyInfo();
+    $('flipAllBtn').style.display='none';
     if(mode==='guest' && hostConn) hostConn.send({t:'ready'});
     else if(mode==='host') hostMarkReady('host');
   }
@@ -446,6 +468,23 @@ function showMyInfo(){
 }
 function openMyCards(){
   document.querySelectorAll('#me .sq').forEach(el=>{ if(el._openNow) el._openNow(); });
+}
+$('flipAllBtn').onclick = ()=>{
+  $('flipAllBtn').style.display='none';
+  openMyCards();
+};
+function showScoopFx(name){
+  const old=$('scoopFx'); if(old) old.remove();
+  const box=document.createElement('div');
+  box.id='scoopFx';
+  const EMOJI=['🪙','🎉','💵','♠','♥','♦','♣','✨'];
+  let chips='';
+  for(let i=0;i<26;i++){
+    chips+=`<div class="chipfall" style="left:${Math.random()*100}%;animation-duration:${(1.4+Math.random()*1.6).toFixed(2)}s;animation-delay:${(Math.random()*0.9).toFixed(2)}s">${EMOJI[Math.floor(Math.random()*EMOJI.length)]}</div>`;
+  }
+  box.innerHTML = chips + `<div class="scoopTxt">💰 SCOOP! 💰<br>${name} takes it ALL</div>`;
+  document.body.appendChild(box);
+  setTimeout(()=>box.remove(), 3200);
 }
 function fmt(n){ return Number.isInteger(n) ? n : n.toFixed(1); }
 function log(html){
@@ -688,6 +727,7 @@ function renderDealLocal(half){
   $('potBacc').textContent=fmt(half);
   $('nextBtn').style.display='none';
   const me = players.find(p=>p.me);
+  $('flipAllBtn').style.display = (me.cards && !me.out) ? 'inline-block' : 'none';
   $('roundMsg').textContent = me.out
     ? `Round ${round} — you're busted, spectating.`
     : `Round ${round} — squeeze your cards. The table reveals when everyone's ready.`;
@@ -719,7 +759,9 @@ function renderOnlineReveal(pl){
     seat.querySelector('.chips').innerHTML='🪙 '+fmt(p.chips);
   });
   openMyCards();
+  $('flipAllBtn').style.display='none';
   const pw=players.find(p=>p.id===pl.pokerWin), bw=players.find(p=>p.id===pl.baccWin);
+  if(pw===bw) showScoopFx(pw.name);
   $('roundMsg').textContent = pw===bw
     ? `${pw.name} scoops BOTH pots!`
     : `${pw.name} takes poker — ${bw.name} takes baccarat.`;
