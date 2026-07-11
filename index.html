@@ -100,17 +100,6 @@
     z-index:5;
     animation:scoopBounce .42s ease-in-out 6 alternate, scoopGlow 3s ease-out forwards;
   }
-  .seat.scooped::before{
-    content:''; position:absolute; inset:-90px; z-index:-1; pointer-events:none;
-    background:repeating-conic-gradient(rgba(255,220,120,.4) 0deg 11deg, rgba(255,220,120,0) 11deg 30deg);
-    animation:rayBurst 3s linear forwards;
-  }
-  @keyframes rayBurst{
-    0%{opacity:0; transform:rotate(0deg) scale(.4);}
-    10%{opacity:.95; transform:rotate(20deg) scale(1);}
-    75%{opacity:.8;}
-    100%{opacity:0; transform:rotate(170deg) scale(1.15);}
-  }
   @keyframes scoopBounce{
     from{transform:scale(1);}
     to{transform:scale(1.06);}
@@ -474,7 +463,6 @@ function makeSqueezable(el){
   };
 }
 function onSqueezed(){
-  sfx.flip();
   squeezedCount++;
   if(squeezedCount>=3){
     showMyInfo();
@@ -520,35 +508,9 @@ const sfx = (()=>{
     o.connect(g).connect(c.destination);
     o.start(t); o.stop(t+dur+0.05);
   }
-  function flip(){                                    // soft natural card peel
-    if(muted) return;
-    try{
-      const c=ac(), t=c.currentTime, len=Math.floor(c.sampleRate*0.24);
-      const buf=c.createBuffer(1,len,c.sampleRate), d=buf.getChannelData(0);
-      let last=0;
-      for(let i=0;i<len;i++){                         // brown-ish noise = paper friction
-        const white=Math.random()*2-1;
-        last=(last+0.05*white)/1.05;
-        d[i]=last*5;
-      }
-      const src=c.createBufferSource(); src.buffer=buf;
-      src.playbackRate.setValueAtTime(0.85,t);
-      src.playbackRate.linearRampToValueAtTime(1.25,t+0.2);   // speeds up as it slides off
-      const f=c.createBiquadFilter(); f.type='lowpass'; f.Q.value=0.7;
-      f.frequency.setValueAtTime(650,t);
-      f.frequency.exponentialRampToValueAtTime(3800,t+0.18);  // brightens toward release
-      const g=c.createGain();
-      g.gain.setValueAtTime(0.0001,t);
-      g.gain.linearRampToValueAtTime(0.5,t+0.06);
-      g.gain.linearRampToValueAtTime(0.32,t+0.15);
-      g.gain.exponentialRampToValueAtTime(0.0001,t+0.24);
-      src.connect(f); f.connect(g); g.connect(c.destination);
-      src.start(t);
-    }catch(_){}
-  }
   function win(){ if(muted) return; try{ tone(660,0,0.22); tone(880,0.11,0.32); }catch(_){} }
   function scoop(){ if(muted) return; try{ [523,659,784,1047].forEach((f,i)=>tone(f,i*0.09,0.3,'triangle',0.28)); }catch(_){} }
-  return { flip, win, scoop,
+  return { win, scoop,
     get muted(){ return muted; },
     toggle(){ muted=!muted; localStorage.setItem('dpmute', muted?'1':'0'); return muted; } };
 })();
