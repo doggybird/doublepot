@@ -57,6 +57,38 @@
   .mutter{font-size:.78rem; opacity:.75; margin:8px 0;}
   .rstat{position:absolute; top:7px; right:9px; font-size:.85rem;}
 
+  /* ---------- game picker ---------- */
+  #gameBtns{display:flex; gap:8px; margin-bottom:12px;}
+  .gbtn{
+    flex:1; padding:9px 0; border-radius:8px; border:1px solid rgba(232,196,105,.45);
+    background:transparent; color:var(--cream); cursor:pointer; font-size:.85rem; transition:.15s;
+  }
+  .gbtn.sel{background:var(--gold); color:var(--ink); font-weight:700; border-color:var(--gold);}
+  .gbtn:disabled{opacity:.35; cursor:default;}
+  #gamePick{
+    padding:10px 12px; border-radius:10px; border:1px solid rgba(232,196,105,.5);
+    background:rgba(0,0,0,.4); color:var(--cream); font-size:.9rem; cursor:pointer;
+  }
+
+  /* ---------- suit call banner ---------- */
+  #suitCall{
+    font-size:1.35rem; font-weight:800; letter-spacing:.14em; margin-bottom:10px;
+    padding:7px 26px; border-radius:30px; background:rgba(0,0,0,.35);
+    border:1px solid rgba(232,196,105,.45); animation:pop .3s ease-out;
+  }
+  #suitCall.red{color:#ff9d9d;}
+  #suitCall.blk{color:var(--cream);}
+
+  /* ---------- dense layout for 10-card hands ---------- */
+  .cards.dense{flex-wrap:wrap; max-width:280px; gap:4px; min-height:0; margin-left:auto; margin-right:auto;}
+  .cards.dense .card{width:44px; height:64px; font-size:11px; border-radius:5px;}
+  #me .cards.dense{max-width:440px;}
+  #me .cards.dense .sq{width:76px; height:110px;}
+  #me .cards.dense .sq .card{width:100%; height:100%; font-size:19px; border-radius:8px;}
+  #me .cards.dense .card{width:76px; height:110px; font-size:19px; border-radius:8px;}
+  .hitcard{outline:2px solid var(--win); box-shadow:0 0 10px rgba(255,215,94,.55);}
+  .dimcard{opacity:.4;}
+
   button.primary{
     background:linear-gradient(180deg,#f3d488,var(--gold)); color:var(--ink);
     border:none; border-radius:10px; padding:12px 34px; font-size:1rem; font-weight:700;
@@ -207,6 +239,11 @@
   </div>
   <div class="panel" id="hostPanel" style="display:none">
     <div class="linkrow"><input id="roomLink" readonly placeholder="creating room…"><button id="copyBtn">Copy</button></div>
+    <div class="mutter" style="text-align:left">First game (you can switch every round)</div>
+    <div id="gameBtns">
+      <button class="gbtn sel" data-g="doublepot">Double Pot</button>
+      <button class="gbtn" data-g="suits">Suits</button>
+    </div>
     <div id="lobbyList"></div>
     <div class="mutter" id="hostStatus"></div>
     <button class="primary" id="startOnlineBtn" disabled>Start Game</button>
@@ -230,11 +267,16 @@
   <div id="opponents"></div>
 
   <div id="center">
+    <div id="suitCall" style="display:none"></div>
     <div id="pot">
       <div class="potHalf"><div class="lbl">Total Pot</div><div class="amt" id="potTotal">0</div></div>
     </div>
     <div id="controls">
       <button class="primary" id="flipAllBtn" style="display:none">🔓 Reveal My Cards</button>
+      <select id="gamePick" style="display:none">
+        <option value="doublepot">Double Pot</option>
+        <option value="suits">Suits</option>
+      </select>
       <button class="primary" id="nextBtn" style="display:none">Next Round</button>
     </div>
     <div id="roundMsg"></div>
@@ -326,11 +368,36 @@ function compareBacc(a,b){            // a,b = {cards, total}; >0 means a wins
   return 0;
 }
 
+/* ---- suits game evaluation: most cards of the called suit wins ---- */
+function evalSuits(cards, suit){
+  const ranks = cards.filter(c=>c.suit===suit).map(c=>c.rank).sort((a,b)=>b-a);
+  return { count:ranks.length, ranks };
+}
+function compareSuits(a,b){           // a,b = {cards, ev}; >0 means a wins
+  if(a.ev.count!==b.ev.count) return a.ev.count-b.ev.count;
+  const n=Math.min(a.ev.ranks.length,b.ev.ranks.length);
+  for(let i=0;i<n;i++) if(a.ev.ranks[i]!==b.ev.ranks[i]) return a.ev.ranks[i]-b.ev.ranks[i];
+  // both had zero of the called suit → highest card overall, then suit order
+  const ra=a.cards.map(c=>c.rank).sort((x,y)=>y-x);
+  const rb=b.cards.map(c=>c.rank).sort((x,y)=>y-x);
+  for(let i=0;i<ra.length;i++) if(ra[i]!==rb[i]) return ra[i]-rb[i];
+  const sa=suitSeq(a.cards), sb=suitSeq(b.cards);
+  for(let i=0;i<sa.length;i++) if(sa[i]!==sb[i]) return sa[i]-sb[i];
+  return 0;
+}
+
 /* =====================================================
    TABLE STATE + UI
    ===================================================== */
 const START_CHIPS = 20;
+/* game registry — each game is a module the table can deal */
+const GAMES = {
+  doublepot: { name:'Double Pot', cards:3,  maxP:6 },
+  suits:     { name:'Suits',      cards:10, maxP:5 }
+};
+const SUIT_NAMES = ['CLUBS','DIAMONDS','HEARTS','SPADES'];
 let players=[], round=0, phase='idle';
+let currentGame='doublepot', currentSuit=null;
 /* online state */
 let mode='solo', peer=null, conns={}, hostConn=null, myId='host', myName='', readySet=new Set(), roomCode='';
 
@@ -463,17 +530,24 @@ function makeSqueezable(el){
 }
 function onSqueezed(){
   squeezedCount++;
-  if(squeezedCount>=3){
+  const me = players.find(p=>p.me);
+  const need = (me && me.cards) ? me.cards.length : 3;
+  if(squeezedCount>=need){
     showMyInfo();
     $('flipAllBtn').style.display='none';
     if(mode==='guest' && hostConn) hostConn.send({t:'ready'});
     else if(mode==='host') hostMarkReady('host');
   }
 }
+function suitsInfoHTML(ev, suit){
+  return `<span class="pk">${SUIT_CHARS[suit]} ×${ev.count}</span>` +
+    (ev.count ? ` · <span class="bc">high ${rankChar(ev.ranks[0])}</span>` : '');
+}
 function showMyInfo(){
   const me = players.find(p=>p.me);
-  $('info-'+me.id).innerHTML =
-    `<span class="pk">${me.eval.label}</span> · <span class="bc">Baccarat ${me.total}</span>`;
+  $('info-'+me.id).innerHTML = currentGame==='suits'
+    ? suitsInfoHTML(me.sev, currentSuit)
+    : `<span class="pk">${me.eval.label}</span> · <span class="bc">Baccarat ${me.total}</span>`;
 }
 function openMyCards(){
   document.querySelectorAll('#me .sq').forEach(el=>{ if(el._openNow) el._openNow(); });
@@ -578,7 +652,25 @@ function hostOnMsg(c,d){
   }
   else if(d.t==='ready'){ hostMarkReady(c.peer); }
 }
+document.querySelectorAll('.gbtn').forEach(b=>{
+  b.onclick = ()=>{
+    if(b.disabled) return;
+    currentGame = b.dataset.g;
+    document.querySelectorAll('.gbtn').forEach(x=>x.classList.toggle('sel', x===b));
+  };
+});
+function syncGameLimits(){
+  // suits deals 10 cards each — 5 players max on one deck
+  const tooMany = players.length > GAMES.suits.maxP;
+  const sBtn = document.querySelector('.gbtn[data-g="suits"]');
+  sBtn.disabled = tooMany;
+  if(tooMany && currentGame==='suits'){
+    currentGame='doublepot';
+    document.querySelectorAll('.gbtn').forEach(x=>x.classList.toggle('sel', x.dataset.g==='doublepot'));
+  }
+}
 function renderLobby(){
+  syncGameLimits();
   $('lobbyList').innerHTML = players.map(p=>`<div class="lobby-item">${p.name}${p.id==='host'?' 👑':''}</div>`).join('');
   $('startOnlineBtn').disabled = players.length<2;
   $('hostStatus').textContent = players.length<2
@@ -608,21 +700,27 @@ $('startOnlineBtn').onclick = ()=>{
   log(`Table opened — ${players.length} players, ${START_CHIPS} chips each. Ante is 1.`);
   hostDeal();
 };
+function setMyEval(p){
+  if(currentGame==='suits'){ p.sev = evalSuits(p.cards, currentSuit); }
+  else { p.eval = evalPoker(p.cards); p.total = baccTotal(p.cards); }
+}
 function hostDeal(){
   round++;
   readySet = new Set();
   const act = activeOnline();
   const deck = newDeck();
-  act.forEach(p=>{ p.chips-=1; p.cards=[deck.pop(),deck.pop(),deck.pop()]; });
-  const half = act.length/2;
+  const G = GAMES[currentGame];
+  currentSuit = currentGame==='suits' ? Math.floor(Math.random()*4) : null;
+  act.forEach(p=>{ p.chips-=1; p.cards=deck.splice(0, G.cards); });
+  const pot = act.length;
   players.forEach(p=>{
     if(p.me || p.gone) return;
     const c=conns[p.id]; if(!c) return;
-    try{ c.send({t:'deal', round, half, players:pubPlayers(), cards:p.out?null:p.cards}); }catch(_){}
+    try{ c.send({t:'deal', game:currentGame, suit:currentSuit, round, pot, players:pubPlayers(), cards:p.out?null:p.cards}); }catch(_){}
   });
   const me = players.find(p=>p.me);
-  if(!me.out){ me.eval=evalPoker(me.cards); me.total=baccTotal(me.cards); }
-  renderDealLocal(half);
+  if(!me.out) setMyEval(me);
+  renderDealLocal(pot);
 }
 function hostMarkReady(id){
   if(phase!=='dealt') return;                      // ignore late or duplicate readies
@@ -635,21 +733,36 @@ function hostReveal(){
   if(phase!=='dealt') return;                      // a round can only reveal once
   phase='revealing';
   const act = activeOnline();
-  const half = act.length/2;
-  act.forEach(p=>{ p.eval=evalPoker(p.cards); p.total=baccTotal(p.cards); });
-  let pw=act[0], bw=act[0];
-  act.forEach(p=>{
-    if(comparePoker({cards:p.cards,eval:p.eval},{cards:pw.cards,eval:pw.eval})>0) pw=p;
-    if(compareBacc({cards:p.cards,total:p.total},{cards:bw.cards,total:bw.total})>0) bw=p;
-  });
-  pw.chips+=half; bw.chips+=half;
-  const payload = {
-    t:'reveal', half, round, pokerWin:pw.id, baccWin:bw.id,
-    hands:Object.fromEntries(act.map(p=>[p.id, p.cards])),
-    chips:Object.fromEntries(players.map(p=>[p.id, p.chips]))
-  };
+  const pot = act.length;
+  let payload;
+  if(currentGame==='suits'){
+    act.forEach(p=>{ p.sev=evalSuits(p.cards, currentSuit); });
+    let w=act[0];
+    act.forEach(p=>{ if(compareSuits({cards:p.cards,ev:p.sev},{cards:w.cards,ev:w.sev})>0) w=p; });
+    w.chips += pot;
+    payload = { t:'reveal', game:'suits', suit:currentSuit, pot, round, win:w.id,
+      hands:Object.fromEntries(act.map(p=>[p.id, p.cards])),
+      chips:Object.fromEntries(players.map(p=>[p.id, p.chips])) };
+  } else {
+    const half = pot/2;
+    act.forEach(p=>{ p.eval=evalPoker(p.cards); p.total=baccTotal(p.cards); });
+    let pw=act[0], bw=act[0];
+    act.forEach(p=>{
+      if(comparePoker({cards:p.cards,eval:p.eval},{cards:pw.cards,eval:pw.eval})>0) pw=p;
+      if(compareBacc({cards:p.cards,total:p.total},{cards:bw.cards,total:bw.total})>0) bw=p;
+    });
+    pw.chips+=half; bw.chips+=half;
+    payload = { t:'reveal', game:'doublepot', pot, round, pokerWin:pw.id, baccWin:bw.id,
+      hands:Object.fromEntries(act.map(p=>[p.id, p.cards])),
+      chips:Object.fromEntries(players.map(p=>[p.id, p.chips])) };
+  }
   broadcast(payload);
   renderOnlineReveal(payload);
+  // dealer's choice for the next round
+  const remaining = players.filter(p=>!p.out && !p.gone).length;
+  $('gamePick').querySelector('option[value="suits"]').disabled = remaining > GAMES.suits.maxP;
+  $('gamePick').value = currentGame;
+  $('gamePick').style.display='inline-block';
   $('nextBtn').style.display='inline-block';
   phase='revealed';
 }
@@ -668,6 +781,12 @@ function hostNextRound(){
     showGameOver(msg);
     return;
   }
+  let pick = $('gamePick').value || currentGame;
+  if(pick==='suits' && act.length>GAMES.suits.maxP){
+    pick='doublepot';
+    log('Suits needs 5 or fewer players — dealing Double Pot instead.');
+  }
+  currentGame = pick;
   hostDeal();
 }
 
@@ -723,13 +842,15 @@ function guestOnMsg(d){
   if(d.t==='deal'){
     players = d.players.map(p=>({...p, me:p.id===myId}));
     round = d.round;
+    currentGame = d.game || 'doublepot';
+    currentSuit = (d.suit===undefined) ? null : d.suit;
     const me = players.find(p=>p.me);
-    if(d.cards){ me.cards=d.cards; me.eval=evalPoker(d.cards); me.total=baccTotal(d.cards); }
+    if(d.cards){ me.cards=d.cards; setMyEval(me); }
     if($('setup').style.display!=='none'){
       $('setup').style.display='none'; $('table').style.display='block';
       $('nextBtn').style.display='none';
     }
-    renderDealLocal(d.half);
+    renderDealLocal(d.pot);
     return;
   }
   if(d.t==='status'){ paintReady(d.ready); return; }
@@ -738,27 +859,40 @@ function guestOnMsg(d){
 }
 
 /* ---------- shared online rendering ---------- */
-function renderDealLocal(half){
+function renderDealLocal(pot){
   renderSeats();
   squeezedCount = 0;
+  const dense = currentGame==='suits';
+  const nCards = GAMES[currentGame].cards;
   players.forEach(p=>{
     if(p.gone || p.out) return;
+    const cont = $('cards-'+p.id);
+    cont.classList.toggle('dense', dense);
     if(p.me && p.cards){
-      $('cards-'+p.id).innerHTML = p.cards.map(sqCardHTML).join('');
+      cont.innerHTML = p.cards.map(sqCardHTML).join('');
       $('info-'+p.id).innerHTML = '🤏 drag any direction to peel · double-click to flip';
       document.querySelectorAll('#me .sq').forEach(makeSqueezable);
     } else if(!p.me){
-      $('cards-'+p.id).innerHTML = '<div class="card back dealt"></div>'.repeat(3);
+      cont.innerHTML = '<div class="card back dealt"></div>'.repeat(nCards);
     }
     $('rstat-'+p.id).textContent='🤏';
   });
-  $('potTotal').textContent=fmt(half*2);
+  if(currentGame==='suits'){
+    const sc=$('suitCall');
+    sc.style.display='inline-block';
+    sc.className = (currentSuit===1||currentSuit===2) ? 'red' : 'blk';
+    sc.textContent = `${SUIT_CHARS[currentSuit]} ${SUIT_NAMES[currentSuit]} CALLED`;
+  } else {
+    $('suitCall').style.display='none';
+  }
+  $('potTotal').textContent=fmt(pot);
   $('nextBtn').style.display='none';
+  $('gamePick').style.display='none';
   const me = players.find(p=>p.me);
   $('flipAllBtn').style.display = (me.cards && !me.out) ? 'inline-block' : 'none';
   $('roundMsg').textContent = me.out
     ? `Round ${round} — you're busted, spectating.`
-    : `Round ${round} — squeeze your cards. The table reveals when everyone's ready.`;
+    : `Round ${round} · ${GAMES[currentGame].name} — squeeze your cards. The table reveals when everyone's ready.`;
   phase='dealt';
 }
 function paintReady(ids){
@@ -768,34 +902,61 @@ function paintReady(ids){
   });
 }
 function renderOnlineReveal(pl){
+  const suitsGame = pl.game==='suits';
   players.forEach(p=>{
     const el=$('rstat-'+p.id); if(el) el.textContent='';
     if(pl.chips[p.id]!==undefined) p.chips=pl.chips[p.id];
     const cards = pl.hands[p.id];
     if(!cards) return;
     p.cards=cards;
-    const ev=evalPoker(cards), total=baccTotal(cards);
-    if(!p.me) $('cards-'+p.id).innerHTML = cards.map(c=>cardHTML(c,false)).join('');
-    $('info-'+p.id).innerHTML = `<span class="pk">${ev.label}</span> · <span class="bc">Baccarat ${total}</span>`;
-    const won=(p.id===pl.pokerWin?pl.half:0)+(p.id===pl.baccWin?pl.half:0), net=won-1;
+    const seat=$('seat-'+p.id);
+    let won=0;
+    if(suitsGame){
+      const ev=evalSuits(cards, pl.suit);
+      // show everyone's full hand with the called suit lit up
+      const cont=$('cards-'+p.id);
+      cont.innerHTML = cards.map(c=>cardHTML(c,false)).join('');
+      [...cont.children].forEach((cEl,i)=>cEl.classList.add(cards[i].suit===pl.suit?'hitcard':'dimcard'));
+      $('info-'+p.id).innerHTML = suitsInfoHTML(ev, pl.suit);
+      if(p.id===pl.win){
+        won=pl.pot;
+        seat.insertAdjacentHTML('beforeend',`<div class="badge bacc">${SUIT_CHARS[pl.suit]} ×${ev.count} WINS</div>`);
+        seat.classList.add('winglow');
+      }
+    } else {
+      const ev=evalPoker(cards), total=baccTotal(cards), half=pl.pot/2;
+      if(!p.me) $('cards-'+p.id).innerHTML = cards.map(c=>cardHTML(c,false)).join('');
+      $('info-'+p.id).innerHTML = `<span class="pk">${ev.label}</span> · <span class="bc">Baccarat ${total}</span>`;
+      won=(p.id===pl.pokerWin?half:0)+(p.id===pl.baccWin?half:0);
+      if(p.id===pl.pokerWin){ seat.insertAdjacentHTML('beforeend','<div class="badge poker">♠ POKER</div>'); seat.classList.add('winglow'); }
+      if(p.id===pl.baccWin){ seat.insertAdjacentHTML('beforeend','<div class="badge bacc">9 BACC</div>'); seat.classList.add('winglow'); }
+    }
+    const net=won-1;
     const d=$('delta-'+p.id);
     d.textContent = net>0?`+${fmt(net)}`:fmt(net);
     d.className = 'delta '+(net>0?'pos':'neg');
-    const seat=$('seat-'+p.id);
-    if(p.id===pl.pokerWin){ seat.insertAdjacentHTML('beforeend','<div class="badge poker">♠ POKER</div>'); seat.classList.add('winglow'); }
-    if(p.id===pl.baccWin){ seat.insertAdjacentHTML('beforeend','<div class="badge bacc">9 BACC</div>'); seat.classList.add('winglow'); }
     seat.querySelector('.chips').innerHTML='🪙 '+fmt(p.chips);
   });
   openMyCards();
   $('flipAllBtn').style.display='none';
-  const pw=players.find(p=>p.id===pl.pokerWin), bw=players.find(p=>p.id===pl.baccWin);
-  if(pw===bw){ scoopSeatFx(pw.id); sfx.scoop(); } else sfx.win();
-  $('roundMsg').textContent = pw===bw
-    ? `${pw.name} scoops BOTH pots!`
-    : `${pw.name} takes poker — ${bw.name} takes baccarat.`;
-  log(`<span class="rnd">R${pl.round}</span> ` +
-    players.filter(p=>pl.hands[p.id]).map(p=>`${p.name}: ${pl.hands[p.id].map(cardStr).join(' ')}`).join(' | ') +
-    ` → ♠ ${pw.name}, 9 ${bw.name}`);
+  if(suitsGame){
+    const w=players.find(p=>p.id===pl.win);
+    const ev=evalSuits(pl.hands[pl.win], pl.suit);
+    scoopSeatFx(w.id); sfx.win();
+    $('roundMsg').textContent = `${w.name} wins the pot with ${SUIT_CHARS[pl.suit]} ×${ev.count}!`;
+    log(`<span class="rnd">R${pl.round}</span> ${SUIT_CHARS[pl.suit]} called — ` +
+      players.filter(p=>pl.hands[p.id]).map(p=>`${p.name} ×${evalSuits(pl.hands[p.id],pl.suit).count}`).join(' | ') +
+      ` → ${w.name} +${fmt(pl.pot)}`);
+  } else {
+    const pw=players.find(p=>p.id===pl.pokerWin), bw=players.find(p=>p.id===pl.baccWin);
+    if(pw===bw){ scoopSeatFx(pw.id); sfx.scoop(); } else sfx.win();
+    $('roundMsg').textContent = pw===bw
+      ? `${pw.name} scoops BOTH pots!`
+      : `${pw.name} takes poker — ${bw.name} takes baccarat.`;
+    log(`<span class="rnd">R${pl.round}</span> ` +
+      players.filter(p=>pl.hands[p.id]).map(p=>`${p.name}: ${pl.hands[p.id].map(cardStr).join(' ')}`).join(' | ') +
+      ` → ♠ ${pw.name}, 9 ${bw.name}`);
+  }
   phase='revealed';
 }
 function showGameOver(msg){
