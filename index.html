@@ -231,8 +231,7 @@
 
   <div id="center">
     <div id="pot">
-      <div class="potHalf"><div class="lbl">♠ Poker Pot</div><div class="amt" id="potPoker">0</div></div>
-      <div class="potHalf"><div class="lbl">9 Baccarat Pot</div><div class="amt" id="potBacc">0</div></div>
+      <div class="potHalf"><div class="lbl">Total Pot</div><div class="amt" id="potTotal">0</div></div>
     </div>
     <div id="controls">
       <button class="primary" id="flipAllBtn" style="display:none">🔓 Reveal My Cards</button>
@@ -753,8 +752,7 @@ function renderDealLocal(half){
     }
     $('rstat-'+p.id).textContent='🤏';
   });
-  $('potPoker').textContent=fmt(half);
-  $('potBacc').textContent=fmt(half);
+  $('potTotal').textContent=fmt(half*2);
   $('nextBtn').style.display='none';
   const me = players.find(p=>p.me);
   $('flipAllBtn').style.display = (me.cards && !me.out) ? 'inline-block' : 'none';
